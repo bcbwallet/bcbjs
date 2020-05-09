@@ -17,6 +17,9 @@ var regexArray = new RegExp("^(.*)\\[([0-9]*)\\]$");
 var Zeros = '0000000000000000000000000000000000000000000000000000000000000000';
 
 function _pack(version: number, type: string, value: any, isArray?: boolean): Uint8Array {
+    if (value == null) {
+        return new Uint8Array(0);
+    }
     if (type.endsWith('-decimal')) {
         let num = (parseFloat(value) * 1000000000).toFixed();
         let big = new BN.BN(num);

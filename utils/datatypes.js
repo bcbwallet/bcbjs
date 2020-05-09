@@ -15,6 +15,9 @@ var regexNumber = new RegExp("^(u?int)([0-9]*)$");
 var regexArray = new RegExp("^(.*)\\[([0-9]*)\\]$");
 var Zeros = '0000000000000000000000000000000000000000000000000000000000000000';
 function _pack(version, type, value, isArray) {
+    if (value == null) {
+        return new Uint8Array(0);
+    }
     if (type.endsWith('-decimal')) {
         var num = (parseFloat(value) * 1000000000).toFixed();
         var big = new bn_js_1.default.BN(num);
