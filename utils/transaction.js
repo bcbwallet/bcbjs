@@ -12,12 +12,11 @@ var errors = __importStar(require("../errors"));
 var address_1 = require("./address");
 var bignumber_1 = require("./bignumber");
 var bytes_1 = require("./bytes");
-var datatypes_1 = require("./datatypes");
 var properties_1 = require("./properties");
 var RLP = __importStar(require("./rlp"));
 var basex_1 = require("./basex");
 var Base64 = __importStar(require("./base64"));
-var js_sha3_1 = require("js-sha3");
+var standard_coder_1 = require("./standard-coder");
 var abi_coder_1 = require("./abi-coder");
 ///////////////////////////////
 // Imported Types
@@ -48,21 +47,6 @@ function handleNumber(value) {
 var allowedTransactionKeys = {
     chainId: true, data: true, gasLimit: true, gasPrice: true, nonce: true, to: true, value: true, note: true
 };
-function encodeFunctionSignature(method) {
-    var hash = js_sha3_1.sha3_256.update(method).digest();
-    return bytes_1.hexlify(hash.slice(0, 4));
-}
-function splitParamTypes(method) {
-    var start = method.indexOf('(');
-    var end = method.indexOf(')');
-    var typeStr = method.substr(start + 1, end - start - 1);
-    if (typeStr.length > 0) {
-        return typeStr.split(',');
-    }
-    else {
-        return [];
-    }
-}
 function serialize(transaction) {
     // checkProperties(transaction, allowedTransactionKeys);
     var raw = [];
@@ -121,6 +105,7 @@ function serialize(transaction) {
     }
     var methodCalls = [];
     transaction.calls.forEach(function (call, index) {
+        var fragment;
         var methodId;
         // default to standard call
         if (call.type === undefined) {
@@ -130,7 +115,8 @@ function serialize(transaction) {
             methodId = '0xffffffff';
         }
         else if (call.type === 'standard') {
-            methodId = encodeFunctionSignature(call.method);
+            fragment = standard_coder_1.parseStandardFunction(call.method);
+            methodId = standard_coder_1.encodeStandardSignature(fragment);
         }
         else {
             errors.throwError('invalid type', errors.INVALID_ARGUMENT, { arg: ('calls[' + index + '].type'), value: call.type });
@@ -143,14 +129,13 @@ function serialize(transaction) {
             items.push(bytes_1.hexlify(bytes_2.stringToByte(call.contract)));
             items.push(methodId);
         }
-        var types = splitParamTypes(call.method);
-        var params = call.params;
         if (call.type === 'standard') {
-            var result = datatypes_1.packParams(transaction.version, types, params);
+            var result = standard_coder_1.packStandardParams(transaction.version, fragment.inputs, call.params);
             items.push(result);
         }
         else if (call.type === 'bvm') {
-            var result = datatypes_1.packBytesParam(transaction.version, bytes_2.concat([abi_coder_1.encodeSignature(call.method), abi_coder_1.defaultAbiCoder.encode(types, params)]));
+            var fragment_1 = abi_coder_1.parseSignature(call.method);
+            var result = standard_coder_1.packStandardBytesParam(transaction.version, bytes_2.concat([abi_coder_1.encodeSignature(call.method), abi_coder_1.defaultAbiCoder.encode(fragment_1.inputs, call.params)]));
             items.push(result);
         }
         if (transaction.version === 1) {

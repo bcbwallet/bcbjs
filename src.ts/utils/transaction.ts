@@ -3,24 +3,19 @@ import { Zero } from '../constants';
 
 import * as errors from '../errors';
 
-import { recoverAddress } from './ed25519';
-
 import { getAddress } from './address';
 import BN from 'bn.js';
 import { BigNumber, bigNumberify } from './bignumber';
 import { arrayify, hexlify, hexZeroPad, stripZeros, padZeros, } from './bytes';
-import { packParams, packBytesParam } from './datatypes';
 
-import { keccak256 } from './keccak256';
 import { checkProperties, resolveProperties, shallowCopy } from './properties';
 
 import * as RLP from './rlp';
 import { Base58 } from './basex';
 import * as Base64 from './base64';
 
-import { sha3_256, keccak_256 } from 'js-sha3';
-
-import { defaultAbiCoder, encodeSignature } from './abi-coder';
+import { StandardFunction, packStandardParams, packStandardBytesParam, encodeStandardSignature, parseStandardFunction } from './standard-coder';
+import { defaultAbiCoder, encodeSignature, parseSignature } from './abi-coder';
 
 ///////////////////////////////
 // Imported Types
@@ -34,7 +29,6 @@ import { type } from 'os';
 
 ///////////////////////////////
 // Exported Types
-
 export type UnsignedTransaction = {
     version?: number;
     to?: string;
@@ -97,21 +91,6 @@ const allowedTransactionKeys: { [ key: string ]: boolean } = {
     chainId: true, data: true, gasLimit: true, gasPrice:true, nonce: true, to: true, value: true, note: true
 }
 
-function encodeFunctionSignature(method: string): string {
-    let hash = sha3_256.update(method).digest();
-    return hexlify(hash.slice(0, 4));
-}
-
-function splitParamTypes(method: string): Array<string> {
-    let start = method.indexOf('(');
-    let end = method.indexOf(')');
-    let typeStr = method.substr(start + 1, end - start -1);
-    if (typeStr.length > 0) {
-        return typeStr.split(',');
-    } else {
-        return [];
-    }
-}
 
 export function serialize(transaction: UnsignedTransaction): string {
     // checkProperties(transaction, allowedTransactionKeys);
@@ -182,7 +161,8 @@ export function serialize(transaction: UnsignedTransaction): string {
     let methodCalls: Array<string | Uint8Array | Array<any> > = [];
 
     transaction.calls.forEach(function(call, index) {
-        let methodId;
+        let fragment: StandardFunction;
+        let methodId: string;
         // default to standard call
         if (call.type === undefined) {
             call.type = 'standard';
@@ -190,7 +170,8 @@ export function serialize(transaction: UnsignedTransaction): string {
         if (call.type === 'bvm') {
             methodId = '0xffffffff';
         } else if (call.type === 'standard') {
-            methodId = encodeFunctionSignature(call.method);
+            fragment = parseStandardFunction(call.method);
+            methodId = encodeStandardSignature(fragment);
         } else {
             errors.throwError('invalid type', errors.INVALID_ARGUMENT, { arg: ('calls[' + index + '].type'), value: call.type });
         }
@@ -203,14 +184,13 @@ export function serialize(transaction: UnsignedTransaction): string {
             items.push(methodId);
         }
 
-        let types = splitParamTypes(call.method);
-        let params = call.params;
         if (call.type === 'standard') {
-            let result = packParams(transaction.version, types, params);
+            let result = packStandardParams(transaction.version, fragment.inputs, call.params);
             items.push(result);
         } else if (call.type === 'bvm') {
-            let result = packBytesParam(transaction.version,
-                concat([ encodeSignature(call.method), defaultAbiCoder.encode(types, params) ]));
+            let fragment = parseSignature(call.method);
+            let result = packStandardBytesParam(transaction.version,
+                concat([ encodeSignature(call.method), defaultAbiCoder.encode(fragment.inputs, call.params) ]));
             items.push(result);
         }
         if (transaction.version === 1) {

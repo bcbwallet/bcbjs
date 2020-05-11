@@ -9,12 +9,34 @@ import { toUtf8Bytes } from './utf8';
 // import { sha256 as hashSha256 } from './sha2';
 import { RLP } from '.';
 import { types } from 'util';
+import { sha3_256, keccak_256 } from 'js-sha3';
+
+import * as errors from '../errors';
 
 var regexBytes = new RegExp("^bytes([0-9]+)$");
 var regexNumber = new RegExp("^(u?int)([0-9]*)$");
 var regexArray = new RegExp("^(.*)\\[([0-9]*)\\]$");
 
 var Zeros = '0000000000000000000000000000000000000000000000000000000000000000';
+
+export type StandardFunction = {
+    type: string
+    name: string,
+    inputs: Array<string>
+};
+
+export function formatStandardSignature(fragment: StandardFunction): string {
+    let prototype = fragment.name;
+    prototype += '(';
+    for (let i = 0; i < fragment.inputs.length; i++) {
+        prototype += fragment.inputs[i];
+        if (i !== fragment.inputs.length - 1) {
+            prototype += ',';
+        }
+    }
+    prototype += ')';
+    return prototype;
+}
 
 function _pack(version: number, type: string, value: any, isArray?: boolean): Uint8Array {
     if (value == null) {
@@ -109,7 +131,7 @@ function _pack(version: number, type: string, value: any, isArray?: boolean): Ui
 
 // @TODO: Array Enum
 
-export function packParams(version: number, types: Array<string>, values: Array<any>) {
+export function packStandardParams(version: number, types: Array<string>, values: Array<any>) {
     if (types.length != values.length) { throw new Error('type/value count mismatch'); }
     var tight: Array<Uint8Array> = [];
     types.forEach(function(type, index) {
@@ -135,7 +157,7 @@ export function packParams(version: number, types: Array<string>, values: Array<
     }
 }
 
-export function packBytesParam(version: number, value: Uint8Array) {
+export function packStandardBytesParam(version: number, value: Uint8Array) {
     var tight: Array<Uint8Array> = [];
     if (version === 1) {
         tight.push(value);
@@ -146,10 +168,110 @@ export function packBytesParam(version: number, value: Uint8Array) {
     }
 }
 
-// export function keccak256(types: Array<string>, values: Array<any>) {
-//     return hashKeccak256(pack(types, values));
-// }
+function parseTypeName(typeName: string): string {
+    let matched = typeName.match(/[\S]+\s*$/);
+    if (matched == null) {
+        return null;
+    }
+    return matched[0];
+}
 
-// export function sha256(types: Array<string>, values: Array<any>) {
-//     return hashSha256(pack(types, values));
-// }
+function parseParamTypes(input: string): Array<string> {
+    let types: Array<string> = [];
+    let start = 0;
+    let depth = 0;
+    for (let p = start; p < input.length; p++) {
+        switch (input.charAt(p)) {
+            case '{':
+            case '[':
+            case '(':
+                depth++;
+                break;
+            case '}':
+            case ']':
+            case ')':
+                depth--;
+                break;
+            case ',':
+                if (depth === 0) {
+                    types.push(parseTypeName(input.substring(start, p)));
+                    start = p + 1;
+                }
+                break;
+        }
+    }
+    let type = parseTypeName(input.substring(start));
+    if (type) {
+        types.push(type);
+    }
+    return types;
+}
+
+function findClosingBracket(input: string, pos: number): number {
+    let close: string;
+    if (input.charAt(pos) === '{') {
+        close = '}';
+    } else if (input.charAt(pos) === '[') {
+        close = ']';
+    } else if (input.charAt(pos) === '(') {
+        close = ')';
+    } else {
+        errors.throwError('not bracket', errors.INVALID_ARGUMENT, { arg: ('character'), value: input.charAt(pos) });
+    }
+    let depth = 0;
+    for (let p = pos; p < input.length; p++) {
+        switch (input.charAt(p)) {
+            case '{':
+            case '[':
+            case '(':
+                depth++;
+                break;
+            case '}':
+            case ']':
+            case ')':
+                depth--;
+                if (depth === 0 && input.charAt(p) === close) {
+                    return p;
+                }
+                break;
+        }
+    }
+    return -1;
+}
+
+export function encodeStandardSignature(fragment: StandardFunction): string {
+    let prototype = formatStandardSignature(fragment);
+    let hash = sha3_256.update(prototype).digest();
+    return hexlify(hash.slice(0, 4));
+}
+
+export function parseStandardFunction(method: string): StandardFunction {
+    let fragment: StandardFunction = {
+        type: 'func',
+        name: null,
+        inputs: []
+    };
+    let prototype = method.replace(/\s+/g, ' ').trim();
+    if (prototype.substring(0, 5) === 'func ') {
+        prototype = method.substring(5);
+    }
+    if (prototype.startsWith('(')) {
+        let p = findClosingBracket(prototype, 0);
+        if (p === -1) {
+            errors.throwError('invalid method prototype', errors.INVALID_ARGUMENT, { arg: ('method'), value: method });
+        }
+        prototype = prototype.substring(p + 1).trimLeft();
+    }
+    let start = prototype.indexOf('(');
+    let end = prototype.lastIndexOf(')');
+    if (start === -1 || end === -1) {
+        errors.throwError('invalid method prototype', errors.INVALID_ARGUMENT, { arg: ('method'), value: method });
+    }
+    fragment.name = prototype.substring(0, start).trimRight();
+
+    fragment.inputs = parseParamTypes(prototype.substring(start + 1, end));
+
+    return fragment;
+}
+
+
