@@ -173,7 +173,7 @@ function parseTypeName(typeName: string): string {
     if (matched == null) {
         return null;
     }
-    return matched[0];
+    return matched[0].trim();
 }
 
 function parseParamTypes(input: string): Array<string> {

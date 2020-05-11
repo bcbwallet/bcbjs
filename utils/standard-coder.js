@@ -178,7 +178,7 @@ function parseTypeName(typeName) {
     if (matched == null) {
         return null;
     }
-    return matched[0];
+    return matched[0].trim();
 }
 function parseParamTypes(input) {
     var types = [];
