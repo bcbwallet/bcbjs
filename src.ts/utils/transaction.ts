@@ -168,7 +168,8 @@ export function serialize(transaction: UnsignedTransaction): string {
             call.type = 'standard';
         }
         if (call.type === 'bvm') {
-            methodId = '0xffffffff';
+            // if method is missing, it's a new contract
+            methodId = call.method === undefined ? '0x00000000' : '0xffffffff';
         } else if (call.type === 'standard') {
             fragment = parseStandardFunction(call.method);
             methodId = encodeStandardSignature(fragment);
@@ -188,10 +189,19 @@ export function serialize(transaction: UnsignedTransaction): string {
             let result = packStandardParams(transaction.version, fragment.inputs, call.params);
             items.push(result);
         } else if (call.type === 'bvm') {
-            let fragment = parseSignature(call.method);
-            let result = packStandardBytesParam(transaction.version,
-                concat([ encodeSignature(call.method), defaultAbiCoder.encode(fragment.inputs, call.params) ]));
-            items.push(result);
+            if (call.method === undefined) {
+                // new contract
+                let tight: Array<Uint8Array> = [];
+                call.params.forEach(function(param: any) {
+                    tight.push(arrayify(RLP.encode(param)));
+                });
+                items.push(tight);
+            } else {
+                let fragment = parseSignature(call.method);
+                let result = packStandardBytesParam(transaction.version,
+                    concat([ encodeSignature(call.method), defaultAbiCoder.encode(fragment.inputs, call.params) ]));
+                items.push(result);
+            }
         }
         if (transaction.version === 1) {
             raw.push(hexlify(stringToByte(call.contract)));

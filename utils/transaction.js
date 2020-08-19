@@ -112,7 +112,8 @@ function serialize(transaction) {
             call.type = 'standard';
         }
         if (call.type === 'bvm') {
-            methodId = '0xffffffff';
+            // if method is missing, it's a new contract
+            methodId = call.method === undefined ? '0x00000000' : '0xffffffff';
         }
         else if (call.type === 'standard') {
             fragment = standard_coder_1.parseStandardFunction(call.method);
@@ -134,9 +135,19 @@ function serialize(transaction) {
             items.push(result);
         }
         else if (call.type === 'bvm') {
-            var fragment_1 = abi_coder_1.parseSignature(call.method);
-            var result = standard_coder_1.packStandardBytesParam(transaction.version, bytes_2.concat([abi_coder_1.encodeSignature(call.method), abi_coder_1.defaultAbiCoder.encode(fragment_1.inputs, call.params)]));
-            items.push(result);
+            if (call.method === undefined) {
+                // new contract
+                var tight_1 = [];
+                call.params.forEach(function (param) {
+                    tight_1.push(bytes_1.arrayify(RLP.encode(param)));
+                });
+                items.push(tight_1);
+            }
+            else {
+                var fragment_1 = abi_coder_1.parseSignature(call.method);
+                var result = standard_coder_1.packStandardBytesParam(transaction.version, bytes_2.concat([abi_coder_1.encodeSignature(call.method), abi_coder_1.defaultAbiCoder.encode(fragment_1.inputs, call.params)]));
+                items.push(result);
+            }
         }
         if (transaction.version === 1) {
             raw.push(bytes_1.hexlify(bytes_2.stringToByte(call.contract)));

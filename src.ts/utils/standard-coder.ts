@@ -133,13 +133,13 @@ function _pack(version: number, type: string, value: any, isArray?: boolean): Ui
 
 export function packStandardParams(version: number, types: Array<string>, values: Array<any>) {
     if (types.length != values.length) { throw new Error('type/value count mismatch'); }
-    var tight: Array<Uint8Array> = [];
+    let tight: Array<Uint8Array> = [];
     types.forEach(function(type, index) {
         if (version === 1) {
             tight.push(_pack(version, type, values[index]));
         } else {
             if (type.startsWith('[]') && ! type.startsWith('[]byte')) {
-                let array: Array<any>;
+                let array: Array<Uint8Array>;
                 values[index].forEach(function(e: any) {
                     array.push(_pack(version, type, e));
                 });
@@ -158,7 +158,8 @@ export function packStandardParams(version: number, types: Array<string>, values
 }
 
 export function packStandardBytesParam(version: number, value: Uint8Array) {
-    var tight: Array<Uint8Array> = [];
+    let tight: Array<Uint8Array> = [];
+
     if (version === 1) {
         tight.push(value);
         return RLP.encode(RLP.encode(tight));
